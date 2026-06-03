@@ -5,7 +5,7 @@
 [![Odin](https://img.shields.io/badge/Odin-dev--2026--05-blue?logo=odin&logoColor=white)](https://odin-lang.org)
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Linux](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?logo=linux&logoColor=white)](https://github.com/xDarkicex/dice-roll/actions)
-[![Build](https://github.com/xDarkicex/dice-roll/actions/workflows/build.yml/badge.svg)](https://github.com/xDarkicex/dice-roll/actions)
+[![Build](https://github.com/xDarkicex/dice-roll/actions/workflows/release.yml/badge.svg)](https://github.com/xDarkicex/dice-roll/actions/workflows/release.yml)
 
 ## Why diceroll?
 
