@@ -26,11 +26,14 @@ jobs:
         run: |
           curl -sL "${{ matrix.odin_url }}" -o odin.tar.gz
           tar -xzf odin.tar.gz
-          echo "$(pwd)" >> $GITHUB_PATH
+          ODIN_DIR=$(pwd)/*
+          echo "$ODIN_DIR" >> $GITHUB_PATH
         shell: bash
 
       - name: Build
-        run: odin build . -file -out:diceroll
+        run: |
+          ODIN_DIR=$(ls -d odin-* 2>/dev/null | head -1)
+          ./$ODIN_DIR/odin build . -file -out:diceroll
 
       - name: Package
         run: tar -czvf diceroll-${{ matrix.target }}.tar.gz diceroll
