@@ -1,6 +1,9 @@
 # diceroll
 
-A Unix dice roller for tabletop use. Rolls N dice with M sides using a cryptographically secure PRNG.
+[![Odin](https://img.shields.io/badge/Odin-v2026--02-blue?logo=odin&logoColor=white)](https://odin-lang.org)
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Linux](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?logo=linux&logoColor=white)](https://github.com/xDarkicex/dice-roll/actions)
+[![Build](https://github.com/xDarkicex/dice-roll/actions/workflows/build.yml/badge.svg)](https://github.com/xDarkicex/dice-roll/actions)
 
 ## Install
 
