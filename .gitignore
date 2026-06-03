@@ -1,0 +1,19 @@
+# Build output
+diceroll
+*.exe
+
+# Odin build artifacts
+*.odin.bak
+*.tmp
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Testing
+*.cover
+
+# Project rules (local only, not committed)
+CLAUDE.md
