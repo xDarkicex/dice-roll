@@ -29,8 +29,6 @@ jobs:
         run: |
           curl -sL "${{ matrix.odin_url }}" -o odin.tar.gz
           tar -xzf odin.tar.gz
-          ODIN_DIR=$(pwd)/*
-          echo "$ODIN_DIR" >> $GITHUB_PATH
         shell: bash
 
       - name: Build
@@ -50,39 +48,47 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout homebrew-tap
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           repository: xDarkicex/homebrew-diceroll
           path: homebrew-tap
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
 
-      - name: Download release artifacts and create formula
+      - name: Compute SHAs
         env:
           VERSION: ${{ github.ref_name }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -sL https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION#v}/diceroll-apple-darwin.tar.gz -o diceroll-apple-darwin.tar.gz
-          curl -sL https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION#v}/diceroll-unknown-linux.tar.gz -o diceroll-unknown-linux.tar.gz
-
+          VERSION_NUM=${VERSION#v}
+          curl -sL https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION_NUM}/diceroll-apple-darwin.tar.gz -o diceroll-apple-darwin.tar.gz
+          curl -sL https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION_NUM}/diceroll-unknown-linux.tar.gz -o diceroll-unknown-linux.tar.gz
           SHA_MAC=$(shasum -a 256 diceroll-apple-darwin.tar.gz | cut -d' ' -f1)
           SHA_LINUX=$(shasum -a 256 diceroll-unknown-linux.tar.gz | cut -d' ' -f1)
+          echo "SHA_MAC=$SHA_MAC" >> $GITHUB_ENV
+          echo "SHA_LINUX=$SHA_LINUX" >> $GITHUB_ENV
+          echo "VERSION_NUM=$VERSION_NUM" >> $GITHUB_ENV
 
+      - name: Create formula
+        env:
+          VERSION_NUM: ${{ env.VERSION_NUM }}
+          SHA_MAC: ${{ env.SHA_MAC }}
+          SHA_LINUX: ${{ env.SHA_LINUX }}
+        run: |
           cat > homebrew-tap/Formula/diceroll.rb << RUBY
           class Diceroll < Formula
             desc "Unix dice roller for tabletop use"
             homepage "https://github.com/xDarkicex/dice-roll"
             license "MIT"
-            version "${VERSION#v}"
+            version "${VERSION_NUM}"
 
             on_macos do
-              url "https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION#v}/diceroll-apple-darwin.tar.gz"
-              sha256 "#{SHA_MAC}"
+              url "https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION_NUM}/diceroll-apple-darwin.tar.gz"
+              sha256 "${SHA_MAC}"
             end
 
             on_linux do
-              url "https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION#v}/diceroll-unknown-linux.tar.gz"
-              sha256 "#{SHA_LINUX}"
+              url "https://github.com/xDarkicex/dice-roll/releases/download/v${VERSION_NUM}/diceroll-unknown-linux.tar.gz"
+              sha256 "${SHA_LINUX}"
             end
 
             def install
@@ -91,11 +97,11 @@ jobs:
           end
           RUBY
 
-      - name: Push to homebrew-tap
+      - name: Push formula
         run: |
           cd homebrew-tap
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add Formula/diceroll.rb
-          git commit -m "Update diceroll to ${{ github.ref_name }}"
+          git commit -m "Update diceroll to v${{ github.ref_name }}"
           git push
