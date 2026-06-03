@@ -74,6 +74,7 @@ jobs:
           SHA_MAC: ${{ env.SHA_MAC }}
           SHA_LINUX: ${{ env.SHA_LINUX }}
         run: |
+          mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/diceroll.rb << RUBY
           class Diceroll < Formula
             desc "Unix dice roller for tabletop use"
