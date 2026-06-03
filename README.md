@@ -5,7 +5,34 @@
 [![Linux](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-blue?logo=linux&logoColor=white)](https://github.com/xDarkicex/dice-roll/actions)
 [![Build](https://github.com/xDarkicex/dice-roll/actions/workflows/build.yml/badge.svg)](https://github.com/xDarkicex/dice-roll/actions)
 
+A Unix dice roller for tabletop use. Rolls N dice with M sides using a cryptographically secure PRNG.
+
 ## Install
+
+### macOS — Homebrew (recommended)
+
+```sh
+brew tap xDarkicex/diceroll
+brew install diceroll
+```
+
+### macOS — Tarball
+
+```sh
+curl -sL https://github.com/xDarkicex/dice-roll/releases/latest/download/diceroll-apple-darwin.tar.gz | tar -xz
+chmod +x diceroll
+./diceroll roll d20
+```
+
+### Linux — Tarball
+
+```sh
+curl -sL https://github.com/xDarkicex/dice-roll/releases/latest/download/diceroll-unknown-linux.tar.gz | tar -xz
+chmod +x diceroll
+./diceroll roll d20
+```
+
+### Build from source
 
 ```sh
 odin build . -file -out:diceroll
