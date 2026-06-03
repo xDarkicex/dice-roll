@@ -52,7 +52,7 @@ jobs:
         with:
           repository: xDarkicex/homebrew-diceroll
           path: homebrew-tap
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           ref: main
 
       - name: Compute SHAs
@@ -105,4 +105,5 @@ jobs:
           git config user.email "github-actions@github.com"
           git add Formula/diceroll.rb
           git commit -m "Update diceroll to v${{ github.ref_name }}"
+          git remote set-url origin https://xDarkicex:${HOMEBREW_TAP_TOKEN}@github.com/xDarkicex/homebrew-diceroll.git
           git push
