@@ -12,13 +12,22 @@ jobs:
         include:
           - os: macos-latest
             target: apple-darwin
+            odin_url: https://github.com/odin-lang/Odin/releases/download/dev-2026-05/odin-macos-amd64-dev-2026-05.tar.gz
           - os: ubuntu-latest
             target: unknown-linux
+            odin_url: https://github.com/odin-lang/Odin/releases/download/dev-2026-05/odin-linux-amd64-dev-2026-05.tar.gz
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Odin
+        run: |
+          curl -sL "${{ matrix.odin_url }}" -o odin.tar.gz
+          tar -xzf odin.tar.gz
+          echo "$(pwd)" >> $GITHUB_PATH
+        shell: bash
 
       - name: Build
         run: odin build . -file -out:diceroll
