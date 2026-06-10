@@ -4,13 +4,7 @@ import "core:fmt"
 import "core:mem"
 import "core:os"
 import "core:strings"
-
-ArgParse :: struct {
-	subcommand: string,
-	count:      int,
-	sides:      int,
-	is_json:    bool,
-}
+import dice "./dice"
 
 ArgsError :: enum {
 	None,
@@ -20,15 +14,19 @@ ArgsError :: enum {
 	Invalid_Spec,
 }
 
-// Unix exit codes for diceroll
 Exit :: enum int {
-	Success        = 0,
-	Usage_Error    = 1, // wrong args / usage
-	Invalid_Spec   = 2, // malformed dice spec
-	Count_Out_Range = 3,// count not in 1-10000
+	Success         = 0,
+	Usage_Error     = 1,
+	Invalid_Spec    = 2,
+	Count_Out_Range = 3,
 }
 
-parse_args :: proc(argv: []string) -> (args: ArgParse, err: ArgsError) {
+CLIArgs :: struct {
+	spec:     dice.RollSpec,
+	is_json:  bool,
+}
+
+parse_args :: proc(argv: []string) -> (args: CLIArgs, err: ArgsError) {
 	if len(argv) < 1 {
 		return {}, ArgsError.Missing_Spec
 	}
@@ -41,28 +39,32 @@ parse_args :: proc(argv: []string) -> (args: ArgParse, err: ArgsError) {
 		return {}, ArgsError.Missing_Spec
 	}
 
-	count, sides, parse_err := parse_dice_spec(argv[1])
+	spec, parse_err := dice.parse_spec(argv[1])
 	if parse_err != nil {
 		return {}, ArgsError.Invalid_Spec
 	}
-	args.count = count
-	args.sides = sides
+	args.spec = spec
 
-	if len(argv) > 2 {
-		if argv[2] == "--json" || argv[2] == "-j" {
+	// Parse optional flags: [count] [--adv|--disadv] [--json]
+	i := 2
+	for i < len(argv) {
+		arg := argv[i]
+		if arg == "--json" || arg == "-j" {
 			args.is_json = true
+			i += 1
+		} else if arg == "--adv" || arg == "--advantage" {
+			args.spec.advantage = .Advantage
+			i += 1
+		} else if arg == "--disadv" || arg == "--disadvantage" {
+			args.spec.advantage = .Disadvantage
+			i += 1
 		} else {
-			explicit := parse_uint(argv[2])
-			if explicit < 1 || explicit > 10000 {
+			explicit := dice.parse_uint(arg)
+			if explicit < 1 || explicit > dice.MAX_DICE {
 				return {}, ArgsError.Invalid_Count
 			}
-			args.count = explicit
-		}
-	}
-
-	if len(argv) > 3 && !args.is_json {
-		if argv[3] == "--json" || argv[3] == "-j" {
-			args.is_json = true
+			args.spec.count = explicit
+			i += 1
 		}
 	}
 
@@ -70,9 +72,11 @@ parse_args :: proc(argv: []string) -> (args: ArgParse, err: ArgsError) {
 }
 
 print_usage :: proc() {
-	fmt.fprintln(os.stderr, "usage: diceroll roll <spec> [count] [--json]")
-	fmt.fprintln(os.stderr, "  spec   dice notation: d20, 3d6, 20")
+	fmt.fprintln(os.stderr, "usage: diceroll roll <spec> [count] [--adv|--disadv] [--json]")
+	fmt.fprintln(os.stderr, "  spec   dice notation: d20, 3d6, d20+5, 4d6k3, 4d6d1, 3d6!, 5d10t8, 4dF")
 	fmt.fprintln(os.stderr, "  count  override number of dice (default from spec)")
+	fmt.fprintln(os.stderr, "  --adv, --advantage    roll with advantage (take highest)")
+	fmt.fprintln(os.stderr, "  --disadv, --disadvantage  roll with disadvantage (take lowest)")
 	fmt.fprintln(os.stderr, "  --json output JSON")
 }
 
@@ -91,11 +95,11 @@ run :: proc(arena: ^mem.Arena, argv: []string) {
 		print_usage()
 		switch parse_err {
 		case .Invalid_Subcommand:
-			fmt.fprintln(os.stderr, "error: unknown command:", args.subcommand)
+			fmt.fprintln(os.stderr, "error: unknown command:", argv[0] if len(argv) > 0 else "")
 		case .Missing_Spec:
 			fmt.fprintln(os.stderr, "error: missing dice spec")
 		case .Invalid_Count:
-			fmt.fprintln(os.stderr, "error: count must be 1-10000")
+			fmt.fprintln(os.stderr, "error: count must be 1-", dice.MAX_DICE)
 		case .Invalid_Spec:
 			fmt.fprintln(os.stderr, "error: invalid dice spec")
 		case .None:
@@ -112,16 +116,19 @@ run :: proc(arena: ^mem.Arena, argv: []string) {
 		os.exit(int(ec))
 	}
 
-	MAX_DICE :: 10000
-	results: [MAX_DICE]int
+	results: [dice.MAX_DICE]int
 
-	sum := roll_dice(results[:args.count], args.count, args.sides)
+	result, roll_err := dice.roll(results[:], args.spec)
+	if roll_err != nil {
+		fmt.fprintln(os.stderr, "error: roll failed")
+		os.exit(int(Exit.Invalid_Spec))
+	}
 
 	if args.is_json {
-		json_out := format_json(arena, results[:args.count], args.count, args.sides, sum)
+		json_out := dice.format_json(arena, results[:result.count], result, args.spec)
 		fmt.println(json_out)
 	} else {
-		text_out := format_text(arena, results[:args.count], args.count, args.sides, sum)
+		text_out := dice.format_text(arena, results[:result.count], result, args.spec)
 		fmt.println(text_out)
 	}
 }
