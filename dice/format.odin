@@ -12,39 +12,41 @@ format_text :: proc(arena: ^mem.Arena, results: []int, result: RollResult, spec:
 	b := strings.builder_make()
 
 	spec_text(&b, spec)
+	strings.write_string(&b, ": [")
 
-	if spec.advantage != .None {
-		strings.write_string(&b, ": [")
+	if spec.wild_sides > 0 && spec.count == 1 {
+		wild_write_results(&b, results[:result.count], spec)
+	} else if spec.advantage != .None {
 		adv_write_results(&b, results[:result.count], spec)
-		strings.write_string(&b, "] → ")
-		fmt.sbprintf(&b, "{}", result.total)
-	} else if spec.exploding {
-		strings.write_string(&b, ": [")
-		write_comma_list(&b, results[:result.count])
-		strings.write_string(&b, "] → ")
-		fmt.sbprintf(&b, "{}", result.total)
-	} else if spec.keep_mode != .All {
-		strings.write_string(&b, ": [")
-		write_comma_list(&b, results[:result.count])
-		strings.write_string(&b, "] → ")
-		fmt.sbprintf(&b, "{}", result.total)
-	} else if spec.target > 0 {
-		strings.write_string(&b, ": [")
-		write_comma_list(&b, results[:result.count])
-		fmt.sbprintf(&b, "] → {} successes", result.sum)
-	} else if spec.modifier != 0 {
-		strings.write_string(&b, ": [")
-		write_comma_list(&b, results[:result.count])
-		fmt.sbprintf(&b, "] → {} + {} = {}", result.sum, spec.modifier, result.total)
 	} else {
-		strings.write_string(&b, ": [")
 		write_comma_list(&b, results[:result.count])
-		fmt.sbprintf(&b, "] → {}", result.sum)
+	}
+
+	strings.write_string(&b, "] → ")
+
+	if spec.target > 0 {
+		fmt.sbprintf(&b, "{} successes", result.sum)
+	} else if spec.modifier != 0 && spec.exploding {
+		fmt.sbprintf(&b, "{} + {} = {}", result.sum, spec.modifier, result.total)
+	} else if spec.modifier != 0 {
+		fmt.sbprintf(&b, "{} + {} = {}", result.sum, spec.modifier, result.total)
+	} else {
+		fmt.sbprintf(&b, "{}", result.total)
+	}
+
+	if result.raises > 0 {
+		plural := "raises"
+		if result.raises == 1 {
+			plural = "raise"
+		}
+		fmt.sbprintf(&b, " ({} {})", result.raises, plural)
 	}
 
 	buf := strings.to_string(b)
 	out, err := mem.arena_alloc_bytes(arena, len(buf))
-	if err != nil do return ""
+	if err != nil {
+		return ""
+	}
 	copy(out, buf)
 	return string(out)
 }
@@ -61,6 +63,9 @@ format_json :: proc(arena: ^mem.Arena, results: []int, result: RollResult, spec:
 	}
 	if spec.modifier != 0 {
 		fmt.sbprintf(&b, `,"modifier":{}`, spec.modifier)
+	}
+	if spec.wild_sides > 0 {
+		fmt.sbprintf(&b, `,"wild_sides":{}`, spec.wild_sides)
 	}
 	if spec.advantage != .None {
 		adv_str := spec.advantage == .Advantage ? "adv" : "disadv"
@@ -81,6 +86,12 @@ format_json :: proc(arena: ^mem.Arena, results: []int, result: RollResult, spec:
 	}
 	if spec.target > 0 {
 		fmt.sbprintf(&b, `,"target":{},"successes":{}`, spec.target, result.sum)
+		if spec.cancel_val > 0 {
+			fmt.sbprintf(&b, `,"cancel_val":{}`, spec.cancel_val)
+		}
+	}
+	if spec.raise_step > 0 {
+		fmt.sbprintf(&b, `,"raise_step":{},"tn":{},"raises":{}`, spec.raise_step, spec.tn, result.raises)
 	}
 
 	strings.write_string(&b, `,"rolls":[`)
@@ -89,7 +100,9 @@ format_json :: proc(arena: ^mem.Arena, results: []int, result: RollResult, spec:
 
 	buf := strings.to_string(b)
 	out, err := mem.arena_alloc_bytes(arena, len(buf))
-	if err != nil do return ""
+	if err != nil {
+		return ""
+	}
 	copy(out, buf)
 	return string(out)
 }
@@ -103,6 +116,9 @@ spec_text :: proc(b: ^strings.Builder, spec: RollSpec) {
 		return
 	}
 	fmt.sbprintf(b, "{}d{}", spec.count, spec.sides)
+	if spec.wild_sides > 0 {
+		fmt.sbprintf(b, "w{}", spec.wild_sides)
+	}
 	if spec.modifier != 0 {
 		if spec.modifier > 0 {
 			fmt.sbprintf(b, "+{}", spec.modifier)
@@ -125,25 +141,37 @@ spec_text :: proc(b: ^strings.Builder, spec: RollSpec) {
 	}
 	if spec.target > 0 {
 		fmt.sbprintf(b, "t{}", spec.target)
+		if spec.cancel_val > 0 {
+			fmt.sbprintf(b, "c{}", spec.cancel_val)
+		}
 	}
 }
 
 write_comma_list :: proc(b: ^strings.Builder, results: []int) {
 	for i in 0 ..< len(results) {
-		if i > 0 do strings.write_string(b, ", ")
+		if i > 0 {
+			strings.write_string(b, ", ")
+		}
 		fmt.sbprintf(b, "{}", results[i])
 	}
 }
 
 write_json_list :: proc(b: ^strings.Builder, results: []int) {
 	for i in 0 ..< len(results) {
-		if i > 0 do strings.write_byte(b, ',')
+		if i > 0 {
+			strings.write_byte(b, ',')
+		}
 		fmt.sbprintf(b, "{}", results[i])
 	}
 }
 
 adv_write_results :: proc(b: ^strings.Builder, results: []int, spec: RollSpec) {
-	// For advantage/disadvantage: [used, discarded]
+	if len(results) >= 2 {
+		fmt.sbprintf(b, "{}, {}", results[0], results[1])
+	}
+}
+
+wild_write_results :: proc(b: ^strings.Builder, results: []int, spec: RollSpec) {
 	if len(results) >= 2 {
 		fmt.sbprintf(b, "{}, {}", results[0], results[1])
 	}

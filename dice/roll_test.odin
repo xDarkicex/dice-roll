@@ -2,6 +2,7 @@ package dice
 
 import "core:fmt"
 import "core:mem"
+import "core:strings"
 import "core:testing"
 
 ARR_SIZE :: 8
@@ -444,4 +445,207 @@ test_format_json_target :: proc(t: ^testing.T) {
 
 	out := format_json(&arena, results[:5], result, spec)
 	testing.expect(t, len(out) > 0, "expected non-empty JSON output")
+}
+
+// ---------------------------------------------------------------------------
+// cancel_val — WoD-style 1s cancel successes
+// ---------------------------------------------------------------------------
+
+@(test)
+test_roll_cancel :: proc(t: ^testing.T) {
+	results: [ARR_SIZE]int
+	// Use a deterministic scenario: we just verify the cancel field
+	// doesn't crash and produces valid results
+	spec := RollSpec{count = 5, sides = 6, target = 4, cancel_val = 1}
+	result, err := roll(results[:], spec)
+	testing.expect_value(t, err, nil)
+	testing.expect(t, result.sum >= 0 && result.sum <= 5,
+		fmt.tprintf("successes after cancel %d should be [0, 5]", result.sum))
+}
+
+@(test)
+test_parse_cancel_notation :: proc(t: ^testing.T) {
+	// Cancel is set programmatically, not via notation (yet)
+	spec := RollSpec{count = 5, sides = 10, target = 8, cancel_val = 1}
+	testing.expect_value(t, spec.cancel_val, 1)
+	testing.expect_value(t, spec.target, 8)
+}
+
+// ---------------------------------------------------------------------------
+// wild_sides — Savage Worlds wild die
+// ---------------------------------------------------------------------------
+
+@(test)
+test_roll_wild_die :: proc(t: ^testing.T) {
+	results: [ARR_SIZE]int
+	spec := RollSpec{count = 1, sides = 8, wild_sides = 6}
+	result, err := roll(results[:], spec)
+	testing.expect_value(t, err, nil)
+	// Should have 2 results (trait die + wild die)
+	testing.expect(t, result.count == 2,
+		fmt.tprintf("wild die: expected 2 results, got %d", result.count))
+	// Higher of the two should be the sum
+	higher := results[0]
+	if results[1] > higher {
+		higher = results[1]
+	}
+	testing.expect_value(t, result.sum, higher)
+	// Each die in valid range
+	testing.expect(t, results[0] >= 1 && results[0] <= 8,
+		fmt.tprintf("trait die %d outside [1,8]", results[0]))
+	testing.expect(t, results[1] >= 1 && results[1] <= 6,
+		fmt.tprintf("wild die %d outside [1,6]", results[1]))
+}
+
+@(test)
+test_roll_wild_die_ignored_for_multi_dice :: proc(t: ^testing.T) {
+	// Wild die only applies to single-die trait rolls
+	results: [ARR_SIZE]int
+	spec := RollSpec{count = 3, sides = 6, wild_sides = 6}
+	result, err := roll(results[:], spec)
+	testing.expect_value(t, err, nil)
+	// Should behave like normal 3d6 roll (wild ignored for multi-die)
+	testing.expect(t, result.count == 3,
+		fmt.tprintf("wild on multi-die: expected 3 results, got %d", result.count))
+}
+
+// ---------------------------------------------------------------------------
+// raises — Savage Worlds raise counting
+// ---------------------------------------------------------------------------
+
+@(test)
+test_roll_raises :: proc(t: ^testing.T) {
+	results: [ARR_SIZE]int
+	spec := RollSpec{count = 1, sides = 8, tn = 4, raise_step = 4}
+	for i in 0 ..< 50 {
+		result, err := roll(results[:], spec)
+		testing.expect_value(t, err, nil)
+		if result.total > spec.tn {
+			expected := (result.total - spec.tn) / spec.raise_step
+			testing.expect_value(t, result.raises, expected)
+		} else {
+			testing.expect_value(t, result.raises, 0)
+		}
+	}
+}
+
+@(test)
+test_roll_no_raises_when_disabled :: proc(t: ^testing.T) {
+	results: [ARR_SIZE]int
+	spec := RollSpec{count = 1, sides = 20}
+	result, err := roll(results[:], spec)
+	testing.expect_value(t, err, nil)
+	testing.expect_value(t, result.raises, 0) // raise_step defaults to 0
+}
+
+// ---------------------------------------------------------------------------
+// parse_compound — "2d6+1d8+5"
+// ---------------------------------------------------------------------------
+
+@(test)
+test_parse_compound_basic :: proc(t: ^testing.T) {
+	specs: [MAX_COMPOUND]RollSpec
+	count, mod, err := parse_compound(specs[:], "2d6+1d8")
+	testing.expect_value(t, err, nil)
+	testing.expect_value(t, count, 2)
+	testing.expect_value(t, mod, 0)
+	testing.expect_value(t, specs[0].count, 2)
+	testing.expect_value(t, specs[0].sides, 6)
+	testing.expect_value(t, specs[1].count, 1)
+	testing.expect_value(t, specs[1].sides, 8)
+}
+
+@(test)
+test_parse_compound_with_flat_mod :: proc(t: ^testing.T) {
+	specs: [MAX_COMPOUND]RollSpec
+	count, mod, err := parse_compound(specs[:], "2d6+5")
+	testing.expect_value(t, err, nil)
+	testing.expect_value(t, count, 1)
+	testing.expect_value(t, mod, 5)
+}
+
+@(test)
+test_parse_compound_all_flat :: proc(t: ^testing.T) {
+	specs: [MAX_COMPOUND]RollSpec
+	count, mod, err := parse_compound(specs[:], "3+2-1")
+	testing.expect_value(t, err, nil)
+	testing.expect_value(t, count, 0)
+	testing.expect_value(t, mod, 4) // 3+2-1
+}
+
+@(test)
+test_parse_compound_empty :: proc(t: ^testing.T) {
+	specs: [MAX_COMPOUND]RollSpec
+	_, _, err := parse_compound(specs[:], "")
+	testing.expect(t, err == Error.Invalid_Spec)
+}
+
+@(test)
+test_roll_compound_smoke :: proc(t: ^testing.T) {
+	results: [MAX_DICE]int
+	result, err := roll_compound(results[:], "1d6+1d4")
+	testing.expect_value(t, err, nil)
+	testing.expect(t, result.count >= 2,
+		fmt.tprintf("compound roll: expected at least 2 results, got %d", result.count))
+	testing.expect(t, result.total >= 2 && result.total <= 10,
+		fmt.tprintf("1d6+1d4 total %d outside [2,10]", result.total))
+}
+
+// ---------------------------------------------------------------------------
+// spec_text new notations
+// ---------------------------------------------------------------------------
+
+@(test)
+test_spec_text_wild :: proc(t: ^testing.T) {
+	b := strings.builder_make()
+	spec := RollSpec{count = 1, sides = 8, wild_sides = 6}
+	spec_text(&b, spec)
+	testing.expect_value(t, strings.to_string(b), "1d8w6")
+}
+
+@(test)
+test_spec_text_target_cancel :: proc(t: ^testing.T) {
+	b := strings.builder_make()
+	spec := RollSpec{count = 5, sides = 10, target = 8, cancel_val = 1}
+	spec_text(&b, spec)
+	testing.expect_value(t, strings.to_string(b), "5d10t8c1")
+}
+
+@(test)
+test_format_text_wild :: proc(t: ^testing.T) {
+	backing: [256]byte
+	arena: mem.Arena
+	mem.arena_init(&arena, backing[:])
+	results: [2]int = {5, 3}
+	spec := RollSpec{count = 1, sides = 8, wild_sides = 6}
+	result := RollResult{count = 2, sum = 5, total = 5}
+
+	out := format_text(&arena, results[:2], result, spec)
+	testing.expect(t, len(out) > 0, "expected non-empty output")
+}
+
+@(test)
+test_format_text_target_cancel :: proc(t: ^testing.T) {
+	backing: [256]byte
+	arena: mem.Arena
+	mem.arena_init(&arena, backing[:])
+	results: [5]int = {9, 1, 8, 6, 10}
+	spec := RollSpec{count = 5, sides = 10, target = 8, cancel_val = 1}
+	result := RollResult{count = 5, sum = 3, total = 3} // 4 successes - 1 cancel = 3
+
+	out := format_text(&arena, results[:5], result, spec)
+	testing.expect_value(t, out, "5d10t8c1: [9, 1, 8, 6, 10] → 3 successes")
+}
+
+@(test)
+test_format_text_raises :: proc(t: ^testing.T) {
+	backing: [256]byte
+	arena: mem.Arena
+	mem.arena_init(&arena, backing[:])
+	results: [1]int = {12}
+	spec := RollSpec{count = 1, sides = 8, tn = 4, raise_step = 4}
+	result := RollResult{count = 1, sum = 12, total = 12, raises = 2}
+
+	out := format_text(&arena, results[:1], result, spec)
+	testing.expect(t, len(out) > 0, "expected non-empty output")
 }

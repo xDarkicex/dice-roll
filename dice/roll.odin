@@ -7,23 +7,28 @@ KeepMode :: enum u8 { All, Highest, Lowest }
 DieType  :: enum u8 { Normal, Fudge }
 
 RollSpec :: struct {
-	count:      int,
-	sides:      int,
-	die_type:   DieType,
-	modifier:   int,
-	advantage:  Advantage,
-	keep_mode:  KeepMode,
-	keep_count: int,
-	drop_count: int,
-	exploding:  bool,
-	reroll_val: int,
-	target:     int,
+	count:       int,
+	sides:       int,
+	die_type:    DieType,
+	modifier:    int,
+	advantage:   Advantage,
+	keep_mode:   KeepMode,
+	keep_count:  int,
+	drop_count:  int,
+	exploding:   bool,
+	reroll_val:  int,
+	target:      int,
+	cancel_val:  int,
+	wild_sides:  int,
+	raise_step:  int,
+	tn:          int,
 }
 
 RollResult :: struct {
-	count: int,
-	sum:   int,
-	total: int,
+	count:  int,
+	sum:    int,
+	total:  int,
+	raises: int,
 }
 
 Error :: enum {
@@ -36,10 +41,6 @@ Error :: enum {
 MAX_DICE  :: 10000
 MAX_SIDES :: 0xFFFF
 
-/*
-roll executes a complete dice roll described by spec.
-Results are written to the caller-provided results slice.
-*/
 roll :: proc(results: []int, spec: RollSpec) -> (RollResult, Error) {
 	if spec.count < 1 || spec.count > MAX_DICE {
 		return {}, Error.Too_Many_Dice
@@ -50,7 +51,9 @@ roll :: proc(results: []int, spec: RollSpec) -> (RollResult, Error) {
 
 	result: RollResult
 
-	if spec.advantage != .None {
+	if spec.wild_sides > 0 && spec.count == 1 {
+		result = roll_wild(results, spec)
+	} else if spec.advantage != .None {
 		result = roll_advantage(results, spec)
 	} else {
 		result.count = spec.count
@@ -74,13 +77,28 @@ roll :: proc(results: []int, spec: RollSpec) -> (RollResult, Error) {
 	}
 
 	if spec.target > 0 {
-		result.sum = count_successes(results[:result.count], spec.target)
+		successes := count_successes(results[:result.count], spec.target)
+		if spec.cancel_val > 0 {
+			cancels := count_value(results[:result.count], spec.cancel_val)
+			successes -= cancels
+			if successes < 0 {
+				successes = 0
+			}
+		}
+		result.sum = successes
 	}
 
 	result.total = result.sum + spec.modifier
 	if result.total < 0 {
 		result.total = 0
 	}
+
+	if spec.raise_step > 0 && spec.tn > 0 {
+		if result.total > spec.tn {
+			result.raises = (result.total - spec.tn) / spec.raise_step
+		}
+	}
+
 	return result, nil
 }
 
@@ -112,6 +130,24 @@ roll_fudge_die :: proc() -> int {
 		return 0
 	}
 	return int(n) - 1
+}
+
+roll_wild :: proc(results: []int, spec: RollSpec) -> RollResult {
+	if len(results) < 2 {
+		return RollResult{count = 1, sum = 0}
+	}
+
+	a := roll_single_die(spec.sides)
+	b := roll_single_die(spec.wild_sides)
+
+	results[0] = a
+	results[1] = b
+
+	sum := a
+	if b > a {
+		sum = b
+	}
+	return RollResult{count = 2, sum = sum}
 }
 
 roll_advantage :: proc(results: []int, spec: RollSpec) -> RollResult {
@@ -179,7 +215,6 @@ apply_keep :: proc(results: []int, count: int, spec: RollSpec) -> (kept_count: i
 		kept_count = 1
 	}
 
-	// Sort ascending, then select from appropriate end
 	sort.quick_sort(results[:count])
 
 	if spec.keep_mode == .Highest {
@@ -199,6 +234,15 @@ count_successes :: proc(results: []int, target: int) -> (successes: int) {
 	for i in 0 ..< len(results) {
 		if results[i] >= target {
 			successes += 1
+		}
+	}
+	return
+}
+
+count_value :: proc(results: []int, val: int) -> (count: int) {
+	for i in 0 ..< len(results) {
+		if results[i] == val {
+			count += 1
 		}
 	}
 	return

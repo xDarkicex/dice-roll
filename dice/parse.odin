@@ -209,3 +209,116 @@ parse_uint :: proc(s: string) -> int {
 	}
 	return result
 }
+
+/*
+parse_compound parses expressions like "2d6+1d8+5" or "d20+3d6-2".
+Writes each dice group to the caller-provided specs buffer.
+Returns the count of specs written and any overall flat modifier.
+*/
+parse_compound :: proc(specs: []RollSpec, spec: string) -> (count: int, modifier: int, err: Error) {
+	if len(spec) == 0 {
+		return 0, 0, Error.Invalid_Spec
+	}
+
+	pos := 0
+	for pos < len(spec) {
+		seg_start := pos
+
+		// Find end of this segment (+ or - boundary, skipping leading +/-)
+		sign := 1
+		if spec[pos] == '+' {
+			pos += 1
+		} else if spec[pos] == '-' {
+			sign = -1
+			pos += 1
+		}
+
+		// Scan to next + or -
+		seg_start = pos
+		for pos < len(spec) {
+			if spec[pos] == '+' || spec[pos] == '-' {
+				break
+			}
+			pos += 1
+		}
+
+		if pos == seg_start {
+			return 0, 0, Error.Invalid_Spec
+		}
+
+		seg := spec[seg_start:pos]
+
+		// Only parse as dice spec if segment contains 'd' or 'D'
+		has_d := false
+		for ch in seg {
+			if ch == 'd' || ch == 'D' {
+				has_d = true
+				break
+			}
+		}
+
+		if has_d {
+			rs, parse_err := parse_spec(seg)
+			if parse_err != nil {
+				return 0, 0, parse_err
+			}
+			if count >= len(specs) {
+				return 0, 0, Error.Too_Many_Dice
+			}
+			if sign < 0 && rs.modifier == 0 {
+				rs.modifier = -(rs.count * rs.sides)
+			}
+			specs[count] = rs
+			count += 1
+		} else {
+			val := parse_uint(seg)
+			if val == 0 && len(seg) > 0 && seg[0] != '0' {
+				return 0, 0, Error.Invalid_Spec
+			}
+			modifier += sign * val
+		}
+	}
+
+	return count, modifier, nil
+}
+
+/*
+roll_compound is a convenience proc that parses and rolls a compound
+expression into the caller's results buffer. Each dice group's results
+are appended sequentially. Returns the combined total.
+*/
+roll_compound :: proc(results: []int, spec: string) -> (RollResult, Error) {
+	specs: [8]RollSpec
+	spec_count, overall_mod, parse_err := parse_compound(specs[:], spec)
+	if parse_err != nil {
+		return {}, parse_err
+	}
+
+	if spec_count == 0 && overall_mod == 0 {
+		return {}, Error.Invalid_Spec
+	}
+
+	result: RollResult
+	write_pos := 0
+
+	for i in 0 ..< spec_count {
+		rs := specs[i]
+		available := results[write_pos:]
+		sub, roll_err := roll(available, rs)
+		if roll_err != nil {
+			return {}, roll_err
+		}
+		result.count += sub.count
+		result.sum += sub.sum
+		write_pos += sub.count
+	}
+
+	result.sum += overall_mod
+	result.total = result.sum
+	if result.total < 0 {
+		result.total = 0
+	}
+	return result, nil
+}
+
+MAX_COMPOUND :: 8
